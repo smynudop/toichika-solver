@@ -1,0 +1,38 @@
+<html>
+	<head>
+		<title>遠い誓いソルバー</title>
+		<meta charset="UTF-8">
+		<link href="toichika.css" rel="stylesheet">
+		<script
+  src="https://code.jquery.com/jquery-3.4.1.min.js"
+  integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+  crossorigin="anonymous"></script>
+		<script src="toichika.js"></script>
+	</head>
+	<body>
+		<h3>遠い誓いソルバー</h3>
+		<div id="manual_menu">説明(クリックで表示)</div>
+		<div id="manual">
+			<ul>
+			<li>遠い誓いを解くことができるかもしれないソルバーです。</li>
+			<li>ぱずぷれやpuzz.linkのURL、もしくは罫線形式の問題を入力できます。</li>
+			<li>基本的には手筋を適用して解きます。仮定は実装されていません。手筋で解ききれない場合は途中盤面を返します。</li>
+			<li>プログラムの実行は閲覧者の環境で行われます。濫用しても負荷がかかるのはサーバーでなく、自分のPCです。</li>
+			<li><s>基本的に実行時間は1秒かかりません。</s><strong>ちょっと重い処理を実装しました。3秒くらい掛かる可能性があります。</strong><br>
+			それ以上経っても結果が表示されない場合は無限ループに陥っています。タブを閉じてください。</li>
+			<li>問題の破綻を指摘する機能はありません。</li>
+			<li>解答実績 まいにちトイチカ94/100 ←更新！</li>
+		</div>
+		<input type="text" name="hogefugapiyo" id="url" value="" placeholder="ぱずぷれやpuzz.linkのURLを入力">
+		<textarea id="border" placeholder="罫線の問題を入力"　autocomplete="off"></textarea>
+		<input type="button" value="クリア" id="clr">
+		<input type="button" value="変更" id="changeInput"><br>
+		<input type="button" value="解く！" id="solve"><br>
+		<div id="board"></div>
+		<div id="log"></div>
+
+		<div></div> 
+		<textarea id="pzpr" style="display: none;"></textarea>
+		<input type="button" value="ぱずぷれ形式でDLする" onclick="IO.download()">
+	</body>
+</html>
