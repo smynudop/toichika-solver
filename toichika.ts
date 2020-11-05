@@ -1,5 +1,130 @@
 let solver:Solver
 
+interface iDirection{
+    name:string
+    pair:string
+    axis:string
+    isFilled: boolean
+    isAllow: boolean
+    text:string
+    pzpr:string
+}
+
+const P:iDirection = { //pending
+    name:"p",
+    isFilled: false,
+    text:"",
+    pzpr:".",
+    pair:"",
+    axis:"",
+    isAllow: false
+}
+
+const B:iDirection = { //blank
+    name:"b",
+    isFilled: true,
+    text:"・",
+    pzpr:"+",
+    pair:"",
+    axis:"",
+    isAllow:false
+}
+
+const U:iDirection = {
+    name:"u",
+    pair:"d",
+    axis:"x",
+    isFilled: true,
+    text:"↑",
+    pzpr:"1",
+    isAllow: true
+}
+
+const D:iDirection = {
+    name:"d",
+    pair:"u",
+    axis:"x",
+    isFilled: true,
+    text:"↓",
+    pzpr:"2",
+    isAllow: true
+}
+
+const L:iDirection = {
+    name:"l",
+    pair:"r",
+    axis:"y",
+    isFilled: true,
+    text:"←",
+    pzpr:"3",
+    isAllow: true
+}
+
+const R:iDirection = {
+    name:"r",
+    pair:"l",
+    axis:"y",
+    isFilled: true,
+    text:"→",
+    pzpr:"4",
+    isAllow: true
+}
+
+class Direction implements iDirection{
+    name:string
+    pair:string
+    axis:string
+    isFilled: boolean
+    text:string
+    pzpr:string
+    isAllow:boolean
+    constructor(data:iDirection){
+        this.name = data.name
+        this.pair = data.pair
+        this.axis = data.axis
+        this.isFilled = data.isFilled
+        this.text = data.text
+        this.pzpr = data.pzpr
+        this.isAllow = data.isAllow
+    }
+
+    get isPending(){
+        return !this.isFilled
+    }
+
+    toString(){
+        return this.name
+    }
+
+    is(d:Direction){
+        return this.name == d.name
+    }
+
+    isPair(d:Direction){
+        return this.pair == d.name
+    }
+
+    pairDirection():Direction{
+        return dir[this.pair]
+    }
+}
+
+const dir:{[key:string]:Direction} = {
+    P:new Direction(P),
+    B:new Direction(B),
+    L:new Direction(L),
+    R:new Direction(R),
+    U:new Direction(U),
+    D:new Direction(D),
+    l:new Direction(L),
+    r:new Direction(R),
+    u:new Direction(U),
+    d:new Direction(D)
+}
+
+
+const dirList = [dir.U,dir.D,dir.L,dir.R]
+
 Array.prototype.unique = function () {
     return this.filter((c, i) => this.indexOf(c) == i)
 }
@@ -25,7 +150,7 @@ class Log {
         this.step++
     }
 
-    adddetail(msg, ...roomnos) {
+    sub(msg, ...roomnos) {
         roomnos = roomnos || []
         var div = $("<div></div>").html(msg)
         if (roomnos) div.data("roomno", roomnos.join(","))
@@ -58,6 +183,15 @@ class Board {
         this.log = new Log()
     }
 
+    setup(){
+        this.makeroom()
+        this.detect()
+        this.log.add("URLの解析が完了しました。\n")
+
+        this.disp()
+        this.refresh()
+    }
+
     get isfilled() {
         return this.pendingroom().length == 0
     }
@@ -86,17 +220,18 @@ class Board {
         for (let l of this.list) {
             ar = ar.concat(l)
         }
-        ar = ar.filter((c) => c.isAllow())
+        ar = ar.filter((c) => c.isAllow)
         return ar
     }
 
     corridorCells() {
         let result:Cell[] = []
         for (let room of this.rooms) {
-            if (room.isCorridor().x && (room.d == "u" || room.d == "d")) {
+            let isCorridor = room.isCorridor()
+            if (isCorridor.x && room.d.axis == "x") {
                 result.push(room.getPendingCells()[0])
             }
-            if (room.isCorridor().y && (room.d == "l" || room.d == "r")) {
+            if (isCorridor.y && room.d.axis == "y") {
                 result.push(room.getPendingCells()[0])
             }
         }
@@ -113,21 +248,22 @@ class Board {
 
     makeroom() {
         for (let cell of this) {
-            if (cell.roomno == 999) {
-                let r = new Room(this.roomlength, this)
-                this.rooms.push(r)
-                r.explore(cell)
-            }
+            if (cell.roomno != 999) continue
+            let r = new Room(this.roomlength, this)
+            this.rooms.push(r)
+            r.explore(cell)
         }
     }
 
     detect() {
         for (let cell of this) {
-            if (cell.right() && cell.br) {
-                cell.addNeighbor(cell.right())
+            let r = cell.right()
+            if (r && cell.br) {
+                cell.addNeighbor(r)
             }
-            if (cell.bottom() && cell.bb) {
-                cell.addNeighbor(cell.bottom())
+            let b = cell.bottom()
+            if (b && cell.bb) {
+                cell.addNeighbor(b)
             }
         }
     }
@@ -137,11 +273,11 @@ class Board {
     }
 
     nothasdirectionroom() {
-        return this.rooms.filter((r) => !r.d)
+        return this.rooms.filter((r) => r.d.isPending)
     }
 
     nothaspairroom() {
-        return this.rooms.filter((r) => r.d && !r.haspair)
+        return this.rooms.filter((r) => r.d.isFilled && !r.haspair)
     }
 
     *[Symbol.iterator]() {
@@ -152,7 +288,6 @@ class Board {
         yield* ar
     }
     disp() {
-        var char = { u: "↑", d: "↓", l: "←", r: "→", b: "・", p: "" }
         $("#board").empty()
 
         var table = $("<table>")
@@ -171,7 +306,7 @@ class Board {
                         td.addClass("br")
                     } else {
                         let cell = this.getcell(j, i)
-                        td.text(char[cell.content])
+                        td.text(cell.content.text)
                         if (cell.isq) td.addClass("q")
                         if (cell.br) td.addClass("br")
                         if (cell.bb) td.addClass("bb")
@@ -190,7 +325,6 @@ class Board {
         if (step === undefined) step = this.log.step
         rooms = rooms || []
 
-        var char = { u: "↑", d: "↓", l: "←", r: "→", b: "・", p: "" }
         $("td").removeClass("fill tmp")
         let board = this
         $("td[id]").each(function (i, e) {
@@ -199,12 +333,12 @@ class Board {
             let cell = board.getcell(x, y)
 
             if (step >= cell.step) {
-                $(e).text(char[cell.content])
+                $(e).text(cell.content.text)
                 if (step >= cell.allowstep) {
                     $(e).addClass("fill")
                 }
             } else if (step >= cell.substep) {
-                let d = cell.room().d || "p"
+                let d = cell.room.d.text
                 $(e).text(d)
                 $(e).addClass("tmp")
             } else {
@@ -231,19 +365,16 @@ interface HuntResult{
 
 interface ResarchResult{
     data: string[]
-    ismust: boolean
-    mustd: string | null
-    isone: boolean
-    oned: string | null
-    isonly: boolean
-    onlyd: string
+    mustd: Direction | null
+    oned: Direction | null
+    onlyd: Direction | null
     isblank: boolean
 }
 
 class Cell {
     x:number
     y:number
-    content:string
+    content:Direction
     br:boolean
     bb:boolean
     roomno: number
@@ -255,11 +386,11 @@ class Cell {
 
     allowstep:number
     parent:Board
-    dopt:any
-    constructor(x, y,parent ) {
+    dopt:Direction
+    constructor(x:number, y:number, parent:Board) {
         this.x = x
         this.y = y
-        this.content = "p"
+        this.content = dir.P
         this.br = false
         this.bb = false
         this.roomno = 999
@@ -270,28 +401,31 @@ class Cell {
         this.pairstep = 999
         this.allowstep = 999
         this.parent = parent
-        this.dopt = null
+        this.dopt = dir.P
     }
 
-    addNeighbor(cell) {
-        this.room().addNeighbor(cell.room())
-        cell.room().addNeighbor(this.room())
+    toString(){
+        return this.pos()
+    }
+
+    addNeighbor(cell:Cell) {
+        this.room.addNeighbor(cell.room)
+        cell.room.addNeighbor(this.room)
     }
 
     blank() {
-        this.content = "b"
+        this.content = dir.B
         this.step = this.parent.log.step
     }
 
-    allow(d) {
+    allow(d:Direction) {
         this.content = d
         this.step = this.parent.log.step
 
-        let room = this.room()
-        room.isfill = true
+        let room = this.room
+
         room.setDirection(d)
-        room.allowx = this.x
-        room.allowy = this.y
+        room.allow = this
         room.fillBlank()
 
         for (let cell of room) {
@@ -299,53 +433,44 @@ class Cell {
         }
     }
 
-    room() {
+    get room() {
         return this.parent.rooms[this.roomno]
     }
 
-    getTarget(d) {
+    getTarget(d:Direction) {
         let board = this.parent
         let x = this.x
         let y = this.y
-        if (d == "u") {
-            return board.list[x].slice(0, y).reverse()
-        } else if (d == "d") {
-            return board.list[x].slice(y + 1)
-        } else if (d == "l") {
-            return board.list
-                .map((b) => b[y])
-                .slice(0, x)
-                .reverse()
-        } else if (d == "r") {
-            return board.list.map((b) => b[y]).slice(x + 1)
-        }else {
-            return []
+        switch(d.name){
+            case "u":
+                return board.list[x].slice(0, y).reverse()
+            case "d":
+                return board.list[x].slice(y + 1)
+            case "l":
+                return board.list
+                    .map((b) => b[y])
+                    .slice(0, x)
+                    .reverse()
+            case "r":
+                return board.list.map((b) => b[y]).slice(x + 1)
+            default:
+                return []
         }
     }
 
-    isPending() {
-        return this.content == "p"
+    get isPending() {
+        return !this.content.isFilled
     }
 
-    isAllow() {
-        return this.content != "p" && this.content != "b"
+    get isAllow() {
+        return this.content.isAllow
     }
 
     isBlank() {
-        return this.content == "b"
-    }
-
-    isInRegion(region) {
-        for (let cell of region) {
-            if (this.x == cell.x && this.y == cell.y) {
-                return true
-            }
-        }
-        return false
+        return this.content.name == "b"
     }
 
     left() {
-        if (!this.parent) return false
         let board = this.parent
         if (this.x == 0) {
             return false
@@ -355,7 +480,6 @@ class Cell {
     }
 
     top() {
-        if (!this.parent) return false
         let board = this.parent
         if (this.y == 0) {
             return false
@@ -365,7 +489,6 @@ class Cell {
     }
 
     right() {
-        if (!this.parent) return false
         let board = this.parent
         if (this.x == board.bx - 1) {
             return false
@@ -375,7 +498,6 @@ class Cell {
     }
 
     bottom() {
-        if (!this.parent) return false
         let board = this.parent
         if (this.y == board.by - 1) {
             return false
@@ -384,11 +506,11 @@ class Cell {
         }
     }
 
-    marry(cell) {
+    marry(cell:Cell) {
         this.haspair = true
         cell.haspair = true
 
-        this.room().marry(cell.roomno)
+        this.room.marry(cell.roomno)
 
         this.pairstep = this.parent.log.step
         cell.pairstep = this.parent.log.step
@@ -398,19 +520,19 @@ class Cell {
         return `R${this.x}C${this.y}`
     }
 
-    topzpr() {
-        let ds = { u: 1, d: 2, l: 3, r: 4, b: "+", p: "." }
-        return ds[this.content]
+    isNeighbor(cell:Cell) {
+        return this.room.isNeighbor(cell.room)
     }
-    isNeighbor(cell) {
-        return this.room().isNeighbor(cell.room())
-    }
-    hunt(d, debug=false) {
-        let target = this.getTarget(d)
-        let pd = paird(d)
-        let xy = {"l":"y","r":"y","u":"x","d":"x"}
-        let axis = xy[d]
 
+    canOption(cell:Cell, d:Direction){
+        return !this.isNeighbor(cell) &&
+        !cell.isReserved(d) &&
+        this.room.canMarry(cell.roomno)
+    }
+    hunt(d:Direction, debug=false) {
+        let target = this.getTarget(d)
+        let pd = d.pairDirection()
+        let axis = d.axis
 
         //blanks: 矢印から調べる場合の確定白マス
         //blanks2: 廊下から調べる場合の確定白マス
@@ -421,68 +543,52 @@ class Cell {
             blanks: new Cells(),
             blanks2: new Cells(),
             hit: "wall",
-            pairallow: new Cell(0,0,this),
-            opttop: new Cell(0,0,this),
+            pairallow: new Cell(0,0,this.parent),
+            opttop: new Cell(0,0,this.parent),
             options: new Cells(),
             pendings: new Cells(),
             isCorridor: false,
         }
 
-        let cross = 0
+        let isDifferentRoom = false
         let nowroomno = this.roomno
         let iscont = true
-        let istestbreak = false
-        let breakflg = false
 
         //checkのほう
         for (let cell of target) {
-            if (debug) console.log(cell.x, cell.y)
-            if (cell.isAllow()) {
-                //矢印にぶつかったら
-                if (cell.content == pd) {
+            let canOption = this.canOption(cell, pd)
+
+            if (cell.isAllow) { //矢印にぶつかったら
+                if (cell.content.isPair(d)) {
                     result.hit = "pair"
                     result.pairallow = cell
                 }
-                if (debug) console.log("矢印です。探索を終了します")
                 break
             }
-            if (cell.roomno != nowroomno) {
-                //境界線をまたいだら
+
+            if (cell.roomno != nowroomno) {//境界線をまたいだら
                 nowroomno = cell.roomno
-                cross++
-                if (debug) console.log("境界をまたぎました")
+                isDifferentRoom = true
             }
-            if (
-                iscont &&
-                (cell.isBlank() ||
-                    this.isNeighbor(cell) ||
-                    cell.isReserved(pd) ||
-                    !this.room().canMarry(cell.roomno))
-            ) {
-                if (debug) console.log("このマスは白マスのようです")
-                if (cell.isPending()) {
-                    result.blanks.push(cell)
-                    if (cross > 0) {
-                        result.blanks2.push(cell)
-                    }
+            if (iscont && (cell.isBlank() || !canOption) ) {
+                if (!cell.isPending) continue
+                result.blanks.push(cell)
+                if (isDifferentRoom) {
+                    result.blanks2.push(cell)
                 }
             } else {
-                if (debug) console.log("このマスは白マスじゃないようです")
                 if (iscont) {
-                    result.isCorridor = cell.room().isCorridor(this, d)[axis] && !cell.room().d
+                    result.isCorridor = cell.room.isCorridor(this)[axis] && cell.room.d.isPending
                 }
-                //if(cell.room().isCorridor(this, d)) breakflg = true
                 iscont = false
-                if (cell.isPending()) {
-                    result.pendings.push(cell)
-                    if (
-                        !this.isNeighbor(cell) &&
-                        !cell.isReserved(pd) &&
-                        this.room().canMarry(cell.roomno)
-                    ) {
-                        result.options.push(cell)
-                    }
+
+                if (!cell.isPending) continue
+
+                result.pendings.push(cell)
+                if (canOption) {
+                    result.options.push(cell)
                 }
+                
             }
         }
         result.opttop = result.options.getcell(0)
@@ -490,12 +596,10 @@ class Cell {
         return result
     }
 
-    research(d, debug?) {
+    research(d:Direction, debug?) {
         let target = this.getTarget(d)
-        let pd = paird(d)
-        let xy = {"l":"y","r":"y","u":"x","d":"x"}
-        let axis = xy[d]
-
+        let pd = d.pairDirection()
+        let axis = d.axis
 
         let result = {
             hit: "wall",
@@ -510,8 +614,10 @@ class Cell {
         let iscont = true
 
         for (let cell of target) {
-            if (cell.isAllow()) {
-                if (cell.content == pd && !this.isNeighbor(cell)) {
+
+            let canOption = this.canOption(cell, pd)
+            if (cell.isAllow) {
+                if (cell.content.isPair(d) && !this.isNeighbor(cell)) {
                     result.hit = "pair"
                 }
                 break
@@ -519,31 +625,24 @@ class Cell {
             if (cell.roomno != nowroomno) {
                 nowroomno = cell.roomno
                 cross++
-                if (cell.room().isCorridor(this, d)[axis]) {
-                    if (cross == 1) {
-                        break
-                    } else if (cell.room().d) {
-                        if (cell.room().d == pd) {
+                if (cell.room.isCorridor(this)[axis]) {
+                    if (cross == 1) break
+                    if (cell.room.d.isFilled) {
+                        if (cell.room.d.isPair(d)) {
                             result.hit = "pairroom" // 自分と向き合う廊下なら終了
                         }
                         break
                     }
                 }
             }
-            if (cell.isPending()) {
+            if (cell.isPending) {
                 result.pendings.push(cell)
             }
-            if (
-                iscont &&
-                (cell.isBlank() ||
-                    this.isNeighbor(cell) ||
-                    cell.isReserved(pd) ||
-                    !cell.room().canMarry(this.roomno))
-            ) {
+            if (iscont && (cell.isBlank() || !canOption)){
                 iscont = true
             } else {
                 iscont = false
-                if (cell.isPending()) {
+                if (cell.isPending) {
                     result.options.push(cell)
                 }
             }
@@ -553,50 +652,33 @@ class Cell {
     }
 
     researchAll() {
-        var dl = ["u", "d", "l", "r"]
-        let m = 0,
-            a = 0,
-            n = 0
+        var dl = dirList
         let r:ResarchResult = {
             data: [],
-            ismust: false,
             mustd: null,
-            isone: false,
             oned: null,
-            isonly: false,
-            onlyd: "a",
+            onlyd: null,
             isblank: false,
         }
         for (let d of dl) {
             let result = this.research(d)
             if (result.hit == "pair" || result.hit == "pairroom") {
-                if (result.pendings.length == 0) {
-                    r.data.push("must")
-                    m++
-                } else {
-                    r.data.push("able")
-                    a++
-                }
+                r.data.push(result.pendings.length ? "able" : "must")
             } else {
-                if (result.options.length == 0) {
-                    r.data.push("not")
-                    n++
-                } else {
-                    r.data.push("able")
-                    a++
-                }
+                r.data.push(result.options.length ? "able" : "not")
             }
         }
 
+        let m = r.data.filter(d => d == "must").length
+        let a = r.data.filter(d => d == "able").length
+        let n = r.data.filter(d => d == "not").length
+
         if (m + a == 1) {
-            r.isonly = true
             r.onlyd = dl[r.data.indexOf("must") + r.data.indexOf("able") + 1]
         }
         if (m == 1) {
-            r.ismust = true
             r.mustd = dl[r.data.indexOf("must")]
         } else if (a == 1) {
-            r.isone = true
             r.oned = dl[r.data.indexOf("able")]
         }
         if (n == 4) {
@@ -605,13 +687,13 @@ class Cell {
         return r
     }
 
-    setdopt(d) {
+    setdopt(d:Direction) {
         this.dopt = d
     }
 
-    isReserved(d) {
-        let conda = this.dopt && this.dopt != d
-        let condb = this.room().isReserved(d)
+    isReserved(d:Direction) {
+        let conda = this.dopt.isFilled && !this.dopt.is(d)
+        let condb = this.room.isReserved(d)
         return conda || condb
     }
 }
@@ -628,7 +710,7 @@ class Cells {
         return this.cells.length
     }
 
-    push(cell) {
+    push(cell:Cell) {
         this.cells.push(cell)
     }
 
@@ -637,11 +719,11 @@ class Cells {
         return this.cells.every((c) => c.roomno == this.cells[0].roomno)
     }
 
-    includes(cell) {
+    includes(cell:Cell) {
         return this.indexOf(cell) !== -1
     }
 
-    indexOf(cell) {
+    indexOf(cell:Cell) {
         for (let i = 0; i < this.cells.length; i++) {
             if (this.cells[i].x == cell.x && this.cells[i].y == cell.y) {
                 return i
@@ -654,7 +736,7 @@ class Cells {
         this.cells = this.cells.concat(cells.cells)
     }
 
-    getcell(no) {
+    getcell(no:number) {
         return this.cells[no]
     }
 
@@ -677,25 +759,25 @@ class Room {
     no: number
     cells:Cell[]
     neighbor:number[]
-    isfill:boolean
-    d:string | null
-    allowx: number | null
-    allowy: number | null
+    d:Direction
+    allow: Cell | null
     parent: Board
     pairno: number | null
     pairopt: any
 
-    constructor(no, parent) {
+    constructor(no:number, parent:Board) {
         this.no = no
         this.cells = []
         this.neighbor = [no]
-        this.isfill = false
-        this.d = null
-        this.allowx = null
-        this.allowy = null
+        this.d = dir.P
+        this.allow = null
         this.parent = parent
         this.pairno = null
         this.pairopt = null
+    }
+
+    get isfill(){
+        return this.allow !== null
     }
 
     addcell(cell) {
@@ -703,43 +785,38 @@ class Room {
         cell.roomno = this.no
     }
 
-    addNeighbor(room) {
+    addNeighbor(room:Room) {
         this.neighbor.push(room.no)
-        this.neighbor = this.neighbor.filter((x, i, self) => self.indexOf(x) === i)
+        this.neighbor = this.neighbor.unique()
     }
 
-    getcell(no) {
+    getcell(no:number) {
         return this.cells[no]
     }
 
     getPendingCells() {
-        return this.cells.filter((c) => c.isPending())
+        return this.cells.filter((c) => c.isPending)
     }
 
-    fillBlank() {
+    fillBlank(exclusion?: Cells) {
+        exclusion = exclusion || new Cells()
         for (let cell of this.cells) {
-            if (cell.isPending()) {
-                cell.blank()
-            }
+            if(exclusion.includes(cell))continue
+            if (cell.isPending) cell.blank()
         }
     }
 
-    isNeighbor(room) {
+    isNeighbor(room:Room) {
         return this.neighbor.includes(room.no)
     }
 
-    isCorridor(cell?, d?) {
+    isCorridor(cell?:Cell) {
         let pending = this.getPendingCells()
-        if (pending.length == 0) return {x:false, y:false}
+        let result = {x:false, y:false}
+        if (pending.length == 0) return result
 
-        let x, y
-        if (cell) {
-            x = cell.x
-            y = cell.y
-        } else {
-            x = pending[0].x
-            y = pending[0].y
-        }
+        let x = cell ? cell.x : pending[0].x
+        let y = cell ? cell.y : pending[0].y
 
         let isx = pending.every((c) => c.x == x)
         if (isx) {
@@ -759,14 +836,9 @@ class Room {
                 }
             }
         }
-
-        if (d == "l" || d == "r") {
-            return { x: false, y: isy }
-        } else if (d == "u" || d == "d") {
-            return { x: isx, y: false }
-        } else {
-            return { x: isx, y: isy }
-        }
+        result.x = isx
+        result.y = isy
+        return result
     }
 
     canMarry(roomno) {
@@ -808,7 +880,7 @@ class Room {
         if (target.length) this.explore(...target)
     }
 
-    setDirection(d) {
+    setDirection(d:Direction) {
         this.d = d
         for (let cell of this) {
             if (cell.substep == 999) cell.substep = this.parent.log.step
@@ -818,17 +890,17 @@ class Room {
     pendingCells() {
         let cells = new Cells()
         for (let cell of this) {
-            if (cell.isPending()) cells.push(cell)
+            if (cell.isPending) cells.push(cell)
         }
         return cells
     }
 
-    setpairno(no) {
+    setpairno(no:number) {
         this.pairno = no
     }
 
-    isReserved(d) {
-        return this.d && this.d != d
+    isReserved(d:Direction) {
+        return this.d.isFilled && !this.d.is(d)
     }
 
     *[Symbol.iterator]() {
@@ -837,15 +909,21 @@ class Room {
 }
 
 class IO {
-    static decode() {
-        if (solver.mode == "url") {
-            return IO.decodeURL()
+    mode:string
+
+    constructor(mode){
+        this.mode = mode
+    }
+
+    decode() {
+        if (this.mode == "url") {
+            return this.decodeURL()
         } else {
-            return IO.decodeBorder()
+            return this.decodeBorder()
         }
     }
 
-    static decodeURL() {
+    decodeURL() {
         var url = $("#url").val()!
         $("#log").empty()
 
@@ -881,14 +959,12 @@ class IO {
 
         btext = btext.slice(wbtextlength)
 
-        board.makeroom()
-
         var c = 0
         for (let i = 0; i < btext.length; i++) {
             var n = parseInt(btext[i], 36)
             if (n <= 4) {
                 let cell = board.getCellForNum(c)
-                let d = ["", "u", "d", "l", "r"][n]
+                let d = [dir.P, dir.U, dir.D, dir.L, dir.R][n]
                 cell.allow(d)
                 cell.isq = true
                 c++
@@ -897,16 +973,10 @@ class IO {
             }
         }
 
-        board.detect()
-        board.log.add("URLの解析が完了しました。\n")
-
-        board.disp()
-        board.refresh()
-
         return board
     }
 
-    static decodeBorder() {
+    decodeBorder() {
         $("#log").empty()
 
         var border = String($("#border").val()).trim().split("\n")
@@ -922,14 +992,6 @@ class IO {
             cell.bb = border[y * 2 + 2][x * 2 + 1] != "　"
         }
 
-        board.makeroom()
-        board.detect()
-
-        board.log.add("URLの解析が完了しました。\n")
-
-        board.disp()
-        board.refresh()
-
         return board
     }
 
@@ -943,7 +1005,7 @@ class IO {
         }
         for (let cell of board.inverted()) {
             if (cell.isq) {
-                txt = txt + cell.topzpr() + " "
+                txt = txt + cell.content.pzpr
             } else {
                 txt = txt + ". "
             }
@@ -952,7 +1014,7 @@ class IO {
         }
         for (let cell of board.inverted()) {
             if (!cell.isq) {
-                txt = txt + cell.topzpr() + " "
+                txt = txt + cell.content.pzpr
             } else {
                 txt = txt + ". "
             }
@@ -1022,27 +1084,24 @@ function find_matching(graph, matching?, result?) {
     return result
 }
 
-function paird(d) {
-    let pairs = { u: "d", d: "u", l: "r", r: "l" }
-    return pairs[d]
-}
-
 
 class Solver {
     board: Board
     mode: string
+    encoder: IO
+
     constructor() {
         this.board = new Board(1,1)
         this.mode = "url"
+        this.encoder = new IO("url")
     }
 
     analysis() {
-        this.board = IO.decode()
-        this.board.log.add("解析開始")
+        this.board = this.encoder.decode()
+        this.board.setup()
+
 
         this.solve()
-
-        this.board.log.add("終了")
         this.board.refresh()
 
         let _this = this
@@ -1065,6 +1124,7 @@ class Solver {
     }
 
     solve() {
+        this.board.log.add("開始")
         var a = 1,
             b = 1
         do {
@@ -1077,6 +1137,8 @@ class Solver {
             if (this.board.isfilled) break
             b = this.pickalloption()
         } while (b)
+        this.board.log.add("終了")
+
     }
 
     basicsolve() {
@@ -1101,15 +1163,15 @@ class Solver {
         //ペアのいない矢印の先を探索します。
         let board = this.board
         let cnt = 0
-        let pairs = { u: "d", d: "u", l: "r", r: "l" }
 
         for (let allow of board.allow()) {
             if (allow.haspair) continue
 
             let d = allow.content
+
             let result:HuntResult = allow.hunt(d)
 
-            let pd = pairs[d]
+            let pd = d.pairDirection()
             let options = result.options
             let pendings = result.pendings
             let isCorridor = result.isCorridor
@@ -1122,78 +1184,39 @@ class Solver {
             if (result.hit == "pair") {
                 if (options.length == 0) {
                     allow.marry(pair)
-                    board.log.adddetail(
-                        "\t" + allow.pos() + "と" + pair.pos() + "はペア(間に未確定マスがない)"
+                    board.log.sub(
+                        `\t${allow}と${pair}はペア(間に未確定マスがない)`
                     )
                     cnt++
                 } else if (pendings.isSameRoom()) {
                     allow.marry(pair)
                     pendings.blank()
-                    board.log.adddetail(
-                        "\t" + allow.pos() + "と" + pair.pos() + "はペア(間の未確定マスが1部屋)"
+                    board.log.sub(
+                        `\t${allow}と${pair}はペア(間の未確定マスが1部屋)`
                     )
                     cnt++
                 } else if (isCorridor) {
-                    opttop.room().setDirection(pd)
-                    board.log.adddetail(
-                        "\t" +
-                            opttop.roomno +
-                            "番の部屋は" +
-                            allow.pos() +
-                            "とペア、" +
-                            pd +
-                            "向き(廊下)",
-                        opttop.roomno
-                    )
+                    opttop.room.setDirection(pd)
+                    board.log.sub(`\t${opttop.roomno}番の部屋は${allow}とペア、${pd}向き(廊下)`,opttop.roomno)
                     cnt++
                 }
             } else {
                 if (options.length == 1) {
                     allow.marry(opttop)
                     opttop.allow(pd)
-                    board.log.add(
-                        "\t" +
-                            opttop.pos() +
-                            "が" +
-                            pd +
-                            "に確定(" +
-                            allow.pos() +
-                            "の唯一の相方候補)"
-                    )
+                    board.log.add(`\t${opttop}が${pd}に確定(${allow}の唯一の相方候補)`)
                     cnt++
-                } else if (options.isSameRoom() && !opttop.room().d) {
-                    for (let cell of opttop.room()) {
-                        if (!options.includes(cell) && cell.isPending()) {
-                            cell.blank()
-                        }
-                    }
-                    opttop.room().setDirection(pd)
-                    board.log.adddetail(
-                        "\t" +
-                            opttop.roomno +
-                            "番の部屋は" +
-                            allow.pos() +
-                            "とペア、" +
-                            pd +
-                            "向き",
-                        opttop.roomno
-                    )
+                } else if (options.isSameRoom() && opttop.room.d.isPending) {
+                    opttop.room.fillBlank(options)
+                    opttop.room.setDirection(pd)
+                    board.log.sub(`\t${opttop.roomno}番の部屋は${allow}とペア、${pd}向き`,opttop.roomno)
                     cnt++
                 } else if (blanks.length > 0) {
-                    board.log.adddetail("\t矢印の先の白マスを" + blanks.length + "個確定")
+                    board.log.sub("\t矢印の先の白マスを" + blanks.length + "個確定")
                     cnt++
                 } else if (isCorridor) {
-                    opttop.room().setDirection(pd)
-                    board.log.adddetail(
-                        "\t" +
-                            opttop.roomno +
-                            "番の部屋は" +
-                            allow.pos() +
-                            "とペア、" +
-                            pd +
-                            "向き(廊下)",
-                        opttop.roomno
-                    )
+                    opttop.room.setDirection(pd)
+                    board.log.sub(`\t${opttop.roomno}番の部屋は${allow}とペア、${pd}向き(廊下)`,opttop.roomno)
                 }
             }
         }
@@ -1203,89 +1226,46 @@ class Solver {
     checkTipOfCorridor() {
         let board = this.board
         let cnt = 0
-        let pairs = { u: "d", d: "u", l: "r", r: "l" ,"p":"error"}
 
         for (let allow of board.corridorCells()) {
-            let d = allow.room().d || "p"
+            let d = allow.room.d
             let result = allow.hunt(d)
-            let pd = pairs[d]
+            let pd = d.pairDirection()
+
             let options = result.options
-            let pendings = result.pendings
             let isCorridor = result.isCorridor
-            let blanks = result.blanks
-            let pair = result.pairallow
             let opttop = result.opttop
 
             result.blanks2.blank()
 
             if (result.hit == "pair") {
-                if (isCorridor) {
-                    opttop.room().setDirection(pd)
-                    allow.room().marry(opttop.roomno)
-                    board.log.adddetail(
-                        "\t" +
-                            opttop.roomno +
-                            "番の部屋は" +
-                            allow.roomno +
-                            "とペア、" +
-                            pd +
-                            "向き(廊下)",
-                        opttop.roomno,
-                        allow.roomno
-                    )
-                    cnt++
-                }
+                if (!isCorridor) continue
+
+                opttop.room.setDirection(pd)
+                allow.room.marry(opttop.roomno)
+                board.log.sub(`\t${opttop.roomno}番の部屋は${allow.roomno}とペア、${pd}向き(廊下)`,
+                    opttop.roomno,
+                    allow.roomno
+                )
+                cnt++
             } else {
                 if (options.length == 1) {
                     opttop.allow(pd)
-                    board.log.add(
-                        "\t" +
-                            opttop.pos() +
-                            "が" +
-                            pd +
-                            "に確定(" +
-                            allow.roomno +
-                            "番の部屋の唯一の相方候補)",
-                        allow.roomno
-                    )
+                    board.log.add(`\t${opttop}が${pd}に確定(${allow.roomno}番の部屋の唯一の相方候補)`, allow.roomno)
                     cnt++
-                } else if (options.isSameRoom() && !opttop.room().d) {
-                    for (let cell of opttop.room()) {
-                        if (!options.includes(cell) && cell.isPending()) {
-                            cell.blank()
-                        }
-                    }
-                    opttop.room().setDirection(pd)
-                    allow.room().marry(opttop.roomno)
-                    board.log.adddetail(
-                        "\t" +
-                            opttop.roomno +
-                            "番の部屋は" +
-                            allow.roomno +
-                            "とペア、" +
-                            pd +
-                            "向き",
-                        opttop.roomno,
-                        allow.roomno
-                    )
+                } else if (options.isSameRoom() && opttop.room.d.isPending) {
+                    opttop.room.fillBlank(options)
+                    opttop.room.setDirection(pd)
+                    allow.room.marry(opttop.roomno)
+                    board.log.sub(`\t${opttop.roomno}番の部屋は${allow.roomno}とペア、${pd}向き`,opttop.roomno,allow.roomno)
                     cnt++
                 } else if (result.blanks2.length > 0) {
-                    board.log.adddetail("\t廊下の先の白マスを" + result.blanks2.length + "個確定")
+                    board.log.sub("\t廊下の先の白マスを" + result.blanks2.length + "個確定")
                     cnt++
                 } else if (isCorridor) {
-                    opttop.room().setDirection(pd)
-                    allow.room().marry(opttop.roomno)
-                    board.log.adddetail(
-                        "\t" +
-                            opttop.roomno +
-                            "番の部屋は" +
-                            allow.roomno +
-                            "とペア、" +
-                            pd +
-                            "向き(廊下)",
-                        opttop.roomno,
-                        allow.roomno
-                    )
+                    opttop.room.setDirection(pd)
+                    allow.room.marry(opttop.roomno)
+                    board.log.sub(`\t${opttop.roomno}番の部屋は${allow.roomno}とペア、${pd}向き(廊下)`,opttop.roomno,allow.roomno)
                 }
             }
         }
@@ -1300,11 +1280,11 @@ class Solver {
                 let cell = pendingCells[0]
                 let result = cell.researchAll()
 
-                if (room.d) {
+                if (room.d.isFilled) {
                     cell.allow(room.d)
-                    board.log.add("\t" + cell.pos() + "が" + room.d + "に確定(未確定マス1、部屋)")
+                    board.log.add("\t" + cell.pos() + "が" + room.d.name + "に確定(未確定マス1、部屋)")
                     cnt++
-                } else if (result.ismust) {
+                } else if (result.mustd) {
                     cell.allow(result.mustd)
                     board.log.add(
                         "\t" +
@@ -1314,7 +1294,7 @@ class Solver {
                             "に確定(未確定マス1、このマスを指す矢印あり)"
                     )
                     cnt++
-                } else if (result.isone) {
+                } else if (result.oned) {
                     cell.allow(result.oned)
                     board.log.add(
                         "\t" +
@@ -1332,20 +1312,17 @@ class Solver {
     checkAllCell() {
         let cnt = 0,
             board = this.board 
-        console.log("全マスチェック")
 
         for (let cell of board) {
-            if (!cell.isPending()) continue
+            if (!cell.isPending) continue
 
             let result = cell.researchAll()
-            console.log(cell.pos())
-            console.log(result)
 
             if (result.isblank) {
                 cell.blank()
                 cnt++
             }
-            if (result.ismust) {
+            if (result.mustd) {
                 cell.setdopt(result.mustd)
             }
         }
@@ -1362,24 +1339,24 @@ class Solver {
     pickalloption() {
         let cnt = 0,
             board = this.board
-        board.log.adddetail("ペアになりうる部屋をごにょごにょします(難しい処理)")
+        board.log.sub("ペアになりうる部屋をごにょごにょします(難しい処理)")
         let option:number[][] = []
         for (let room of board.rooms) {
             if (room.haspair()) continue
             let rs
-            if (room.isfill) {
-                let cell = board.getcell(room.allowx, room.allowy)
+            if (room.allow) {
+                let cell = room.allow
                 let r = cell.hunt(cell.content)
                 rs = r.options
-                if (r.hit == "pair" && r.pairallow.room().canMarry(room.no)) rs.push(r.pairallow)
+                if (r.hit == "pair" && r.pairallow.room.canMarry(room.no)) rs.push(r.pairallow)
             } else {
-                let ds = room.d ? [room.d] : ["u", "d", "l", "r"]
+                let ds = room.d ? [room.d] : [dir.U,dir.B,dir.L,dir.R]
                 rs = new Cells()
                 for (let d of ds) {
                     for (let cell of room.pendingCells()) {
                         let r = cell.hunt(d)
                         rs.concat(r.options)
-                        if (r.hit == "pair" && r.pairallow.room().canMarry(room.no))
+                        if (r.hit == "pair" && r.pairallow.room.canMarry(room.no))
                             rs.push(r.pairallow)
                     }
                 }
@@ -1399,7 +1376,7 @@ class Solver {
                 if (n === null || n === undefined) continue
                 if (opt.length == 1) {
                     if (i < n) {
-                        board.log.adddetail("\t" + i + "番と" + n + "番はペア", i, n)
+                        board.log.sub("\t" + i + "番と" + n + "番はペア", i, n)
                     }
                     board.getroom(i).marry(n)
                     cnt++
@@ -1417,7 +1394,7 @@ class Solver {
 		//名前変えなきゃね
 		var cnt = 0, board = this.board
 		for (let room of board.rooms) {
-			if (room.isfill || room.d) continue
+			if (room.isfill || room.d.isFilled) continue
 			let rs:ResarchResult[] = []
 			for (let cell of room.pendingCells()) {
 				rs.push(cell.researchAll())
@@ -1425,10 +1402,10 @@ class Solver {
 			if (rs.length == 0) {
 				continue
 			}
-			if (rs.every((r) => r.isonly && r.onlyd == rs[0].onlyd)) {
+			if (rs.every((r) => r.onlyd == rs[0].onlyd) && rs[0].onlyd) {
 				room.setDirection(rs[0].onlyd)
 				cnt++
-				board.log.adddetail("\t" + room.no + "番の部屋は" + room.d + "向き(全調査)", room.no)
+				board.log.sub("\t" + room.no + "番の部屋は" + room.d + "向き(全調査)", room.no)
 			}
 		}
 		this.checkTipOfCorridor()
@@ -1439,8 +1416,10 @@ class Solver {
 		//未確定の部屋のセルを全探索して、相方候補になる部屋が定まるとき、それを確定します。
 		let cnt = 0,board = this.board
 		for (let room of board.rooms) {
-			if (room.isfill || room.haspair()) continue
-			let ds = room.d ? [room.d] : ["u", "d", "l", "r"]
+
+            if (room.isfill || room.haspair()) continue
+            
+			let ds = room.d ? [room.d] : dirList
 			let rs = new Cells()
 			for (let d of ds) {
 				for (let cell of room.pendingCells()) {
@@ -1450,25 +1429,19 @@ class Solver {
 				}
 			}
 	
-			if (rs.isSameRoom()) {
-				let cell = rs.getcell(0)
-				room.marry(cell.roomno)
-				if (room.d && !cell.room().d) {
-					cell.room().setDirection(paird(room.d))
-					board.log.adddetail(
-						"\t" + cell.roomno + "番は" + room.no + "番とペア、" + paird(room.d) + "向き",
-						cell.roomno,
-						room.no
-					)
-				} else {
-					board.log.adddetail(
-						"\t" + cell.roomno + "番は" + room.no + "番とペア",
-						cell.roomno,
-						room.no
-					)
-				}
-				cnt++
-			}
+            if (!rs.isSameRoom()) continue
+            
+            let cell = rs.getcell(0)
+            room.marry(cell.roomno)
+
+            if (room.d.isFilled && cell.room.d.isPending) {
+                cell.room.setDirection(room.d.pairDirection())
+                board.log.sub(`\t${cell.roomno}番は${room.no}番とペア、${room.d.pair}向き`,cell.roomno,room.no)
+            } else {
+                board.log.sub(`\t${cell.roomno}番は${room.no}番とペア`,cell.roomno,room.no)
+            }
+            cnt++
+			
 		}
 		return cnt
 	}
